@@ -1,0 +1,743 @@
+"use client"
+
+import type React from "react"
+import { useState } from "react"
+import Header from "@/components/header"
+import Footer from "@/components/footer"
+import { Button } from "@/components/ui/button"
+import { Upload, X, ArrowUp, ArrowDown, Image, CheckCircle, AlertCircle, Download, FileImage } from "lucide-react"
+
+// TypeScript declarations for PDF.js
+declare global {
+  interface Window {
+    pdfjsLib: any
+  }
+}
+
+interface ConvertPDFFile {
+  id: string
+  name: string
+  size: number
+  file: File
+  quality: number
+}
+
+interface Toast {
+  id: string
+  message: string
+  type: 'success' | 'error'
+}
+
+// Improved ZIP file creation with proper CRC-32 calculation
+const calculateCRC32 = (data: Uint8Array): number => {
+  const crcTable: number[] = []
+  for (let i = 0; i < 256; i++) {
+    let crc = i
+    for (let j = 0; j < 8; j++) {
+      crc = (crc & 1) ? (0xEDB88320 ^ (crc >>> 1)) : (crc >>> 1)
+    }
+    crcTable[i] = crc
+  }
+
+  let crc = 0xFFFFFFFF
+  for (let i = 0; i < data.length; i++) {
+    crc = crcTable[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8)
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0
+}
+
+const createZipBlob = async (files: { name: string; data: Uint8Array }[]): Promise<Blob> => {
+  const zipParts: Uint8Array[] = []
+  const centralDirEntries: Uint8Array[] = []
+  let localFileHeaderOffset = 0
+
+  for (const file of files) {
+    const fileName = new TextEncoder().encode(file.name)
+    const crc32 = calculateCRC32(file.data)
+    
+    // Create local file header
+    const localHeader = new Uint8Array(30 + fileName.length)
+    
+    // Local file header signature
+    localHeader.set([0x50, 0x4b, 0x03, 0x04], 0)
+    // Version needed to extract (2.0)
+    localHeader.set([0x14, 0x00], 4)
+    // General purpose bit flag
+    localHeader.set([0x00, 0x00], 6)
+    // Compression method (0 = stored/no compression)
+    localHeader.set([0x00, 0x00], 8)
+    // File last modification time (0)
+    localHeader.set([0x00, 0x00], 10)
+    // File last modification date (0)
+    localHeader.set([0x00, 0x00], 12)
+    // CRC-32
+    localHeader.set([
+      crc32 & 0xff,
+      (crc32 >>> 8) & 0xff,
+      (crc32 >>> 16) & 0xff,
+      (crc32 >>> 24) & 0xff
+    ], 14)
+    // Compressed size
+    const size = file.data.length
+    localHeader.set([
+      size & 0xff,
+      (size >>> 8) & 0xff,
+      (size >>> 16) & 0xff,
+      (size >>> 24) & 0xff
+    ], 18)
+    // Uncompressed size
+    localHeader.set([
+      size & 0xff,
+      (size >>> 8) & 0xff,
+      (size >>> 16) & 0xff,
+      (size >>> 24) & 0xff
+    ], 22)
+    // File name length
+    localHeader.set([fileName.length & 0xff, (fileName.length >>> 8) & 0xff], 26)
+    // Extra field length
+    localHeader.set([0x00, 0x00], 28)
+    // File name
+    localHeader.set(fileName, 30)
+
+    zipParts.push(localHeader)
+    zipParts.push(file.data)
+
+    // Create central directory entry
+    const centralDirEntry = new Uint8Array(46 + fileName.length)
+    // Central directory file header signature
+    centralDirEntry.set([0x50, 0x4b, 0x01, 0x02], 0)
+    // Version made by
+    centralDirEntry.set([0x14, 0x00], 4)
+    // Version needed to extract
+    centralDirEntry.set([0x14, 0x00], 6)
+    // General purpose bit flag
+    centralDirEntry.set([0x00, 0x00], 8)
+    // Compression method
+    centralDirEntry.set([0x00, 0x00], 10)
+    // File last modification time
+    centralDirEntry.set([0x00, 0x00], 12)
+    // File last modification date
+    centralDirEntry.set([0x00, 0x00], 14)
+    // CRC-32
+    centralDirEntry.set([
+      crc32 & 0xff,
+      (crc32 >>> 8) & 0xff,
+      (crc32 >>> 16) & 0xff,
+      (crc32 >>> 24) & 0xff
+    ], 16)
+    // Compressed size
+    centralDirEntry.set([
+      size & 0xff,
+      (size >>> 8) & 0xff,
+      (size >>> 16) & 0xff,
+      (size >>> 24) & 0xff
+    ], 20)
+    // Uncompressed size
+    centralDirEntry.set([
+      size & 0xff,
+      (size >>> 8) & 0xff,
+      (size >>> 16) & 0xff,
+      (size >>> 24) & 0xff
+    ], 24)
+    // File name length
+    centralDirEntry.set([fileName.length & 0xff, (fileName.length >>> 8) & 0xff], 28)
+    // Extra field length
+    centralDirEntry.set([0x00, 0x00], 30)
+    // File comment length
+    centralDirEntry.set([0x00, 0x00], 32)
+    // Disk number start
+    centralDirEntry.set([0x00, 0x00], 34)
+    // Internal file attributes
+    centralDirEntry.set([0x00, 0x00], 36)
+    // External file attributes
+    centralDirEntry.set([0x00, 0x00, 0x00, 0x00], 38)
+    // Relative offset of local header
+    centralDirEntry.set([
+      localFileHeaderOffset & 0xff,
+      (localFileHeaderOffset >>> 8) & 0xff,
+      (localFileHeaderOffset >>> 16) & 0xff,
+      (localFileHeaderOffset >>> 24) & 0xff
+    ], 42)
+    // File name
+    centralDirEntry.set(fileName, 46)
+
+    centralDirEntries.push(centralDirEntry)
+    localFileHeaderOffset += localHeader.length + file.data.length
+  }
+
+  // Add central directory entries
+  const centralDirOffset = zipParts.reduce((sum, part) => sum + part.length, 0)
+  for (const entry of centralDirEntries) {
+    zipParts.push(entry)
+  }
+
+  const centralDirSize = centralDirEntries.reduce((sum, entry) => sum + entry.length, 0)
+
+  // End of central directory record
+  const endOfCentralDir = new Uint8Array(22)
+  // End of central directory signature
+  endOfCentralDir.set([0x50, 0x4b, 0x05, 0x06], 0)
+  // Number of this disk
+  endOfCentralDir.set([0x00, 0x00], 4)
+  // Disk where central directory starts
+  endOfCentralDir.set([0x00, 0x00], 6)
+  // Number of central directory records on this disk
+  endOfCentralDir.set([files.length & 0xff, (files.length >>> 8) & 0xff], 8)
+  // Total number of central directory records
+  endOfCentralDir.set([files.length & 0xff, (files.length >>> 8) & 0xff], 10)
+  // Size of central directory
+  endOfCentralDir.set([
+    centralDirSize & 0xff,
+    (centralDirSize >>> 8) & 0xff,
+    (centralDirSize >>> 16) & 0xff,
+    (centralDirSize >>> 24) & 0xff
+  ], 12)
+  // Offset of start of central directory
+  endOfCentralDir.set([
+    centralDirOffset & 0xff,
+    (centralDirOffset >>> 8) & 0xff,
+    (centralDirOffset >>> 16) & 0xff,
+    (centralDirOffset >>> 24) & 0xff
+  ], 16)
+  // ZIP file comment length
+  endOfCentralDir.set([0x00, 0x00], 20)
+
+  zipParts.push(endOfCentralDir)
+
+  // Combine all parts
+  const totalLength = zipParts.reduce((sum, part) => sum + part.length, 0)
+  const zipData = new Uint8Array(totalLength)
+  let offset = 0
+
+  for (const part of zipParts) {
+    zipData.set(part, offset)
+    offset += part.length
+  }
+
+  return new Blob([zipData], { type: 'application/zip' })
+}
+
+export default function PDFToJPGPage() {
+  const [files, setFiles] = useState<ConvertPDFFile[]>([])
+  const [dragActive, setDragActive] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [toasts, setToasts] = useState<Toast[]>([])
+
+  const showToast = (message: string, type: 'success' | 'error') => {
+    const id = Math.random().toString(36).substr(2, 9)
+    const newToast: Toast = { id, message, type }
+    
+    setToasts(prev => [...prev, newToast])
+    
+    setTimeout(() => {
+      setToasts(prev => prev.filter(toast => toast.id !== id))
+    }, 7000)
+  }
+
+  const removeToast = (id: string) => {
+    setToasts(prev => prev.filter(toast => toast.id !== id))
+  }
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true)
+    } else if (e.type === "dragleave") {
+      setDragActive(false)
+    }
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(false)
+
+    const droppedFiles = Array.from(e.dataTransfer.files)
+    addFiles(droppedFiles)
+  }
+
+  const addFiles = (newFiles: File[]) => {
+    const pdfFiles = newFiles.filter((file) => file.type === "application/pdf")
+    const fileObjects: ConvertPDFFile[] = pdfFiles.map((file) => ({
+      id: Math.random().toString(36).substr(2, 9),
+      name: file.name,
+      size: file.size,
+      file,
+      quality: 80,
+    }))
+    setFiles((prev) => [...prev, ...fileObjects])
+  }
+
+  const removeFile = (id: string) => {
+    setFiles((prev) => prev.filter((file) => file.id !== id))
+  }
+
+  const moveFile = (id: string, direction: "up" | "down") => {
+    setFiles((prev) => {
+      const index = prev.findIndex((file) => file.id === id)
+      if (index === -1) return prev
+
+      const newIndex = direction === "up" ? index - 1 : index + 1
+      if (newIndex < 0 || newIndex >= prev.length) return prev
+
+      const newFiles = [...prev]
+      const [movedFile] = newFiles.splice(index, 1)
+      newFiles.splice(newIndex, 0, movedFile)
+      return newFiles
+    })
+  }
+
+  const updateFileQuality = (fileId: string, quality: number) => {
+    setFiles(prev => prev.map(file => 
+      file.id === fileId ? { ...file, quality } : file
+    ))
+  }
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return "0 Bytes"
+    const k = 1024
+    const sizes = ["Bytes", "KB", "MB", "GB"]
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
+  }
+
+  const getQualityOptions = () => [
+    { value: 60, label: "Low quality (smaller file)" },
+    { value: 80, label: "Medium quality (recommended)" },
+    { value: 90, label: "High quality" },
+    { value: 100, label: "Maximum quality (larger file)" }
+  ]
+
+  // Load PDF.js from CDN
+  const loadPDFJS = async () => {
+    return new Promise((resolve, reject) => {
+      if (typeof window === 'undefined') {
+        reject(new Error('PDF.js can only be loaded in browser'))
+        return
+      }
+
+      // Check if PDF.js is already loaded
+      if (window.pdfjsLib) {
+        resolve(window.pdfjsLib)
+        return
+      }
+
+      // Load PDF.js script
+      const script = document.createElement('script')
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'
+      script.onload = () => {
+        if (window.pdfjsLib) {
+          // Set worker source
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+          resolve(window.pdfjsLib)
+        } else {
+          reject(new Error('PDF.js failed to load'))
+        }
+      }
+      script.onerror = () => reject(new Error('Failed to load PDF.js script'))
+      document.head.appendChild(script)
+    })
+  }
+
+  // Get actual PDF page count
+  const getPDFPageCount = async (pdfFile: File): Promise<number> => {
+    try {
+      const pdfjsLib = await loadPDFJS()
+      const arrayBuffer = await pdfFile.arrayBuffer()
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+      return pdf.numPages
+    } catch (error) {
+      console.error('Failed to get PDF page count:', error)
+      return 1 // Fallback to 1 page
+    }
+  }
+
+  // Render PDF page to canvas using PDF.js
+  const renderPDFPageToCanvas = async (pdfFile: File, pageNumber: number, quality: number): Promise<Uint8Array> => {
+    try {
+      // Load PDF.js dynamically
+      const pdfjsLib = await loadPDFJS()
+      
+      const arrayBuffer = await pdfFile.arrayBuffer()
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+      const page = await pdf.getPage(pageNumber)
+      
+      // Calculate scale based on quality (higher quality = larger scale)
+      const scale = Math.max(1, quality / 50) // Scale from 1.2 to 2.0
+      const viewport = page.getViewport({ scale })
+      
+      // Create canvas
+      const canvas = document.createElement('canvas')
+      const context = canvas.getContext('2d')
+      canvas.height = viewport.height
+      canvas.width = viewport.width
+      
+      if (!context) {
+        throw new Error('Could not get canvas context')
+      }
+      
+      // Render page to canvas
+      const renderContext = {
+        canvasContext: context,
+        viewport: viewport
+      }
+      
+      await page.render(renderContext).promise
+      
+      // Convert canvas to JPEG blob
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((blob) => {
+          if (blob) {
+            resolve(blob)
+          } else {
+            reject(new Error('Failed to create blob from canvas'))
+          }
+        }, 'image/jpeg', quality / 100)
+      })
+      
+      const arrayBuffer2 = await blob.arrayBuffer()
+      return new Uint8Array(arrayBuffer2)
+      
+    } catch (error) {
+      console.error('PDF rendering failed:', error)
+      throw error // Re-throw to handle in calling function
+    }
+  }
+
+  const convertPDFsToJPG = async () => {
+    setLoading(true)
+    try {
+      const allImages: { name: string; data: Uint8Array }[] = []
+      let totalPages = 0
+
+      for (const file of files) {
+        try {
+          // Get actual page count from PDF
+          const pageCount = await getPDFPageCount(file.file)
+          totalPages += pageCount
+          
+          console.log(`Processing ${file.name} with ${pageCount} pages`)
+          
+          for (let pageNumber = 1; pageNumber <= pageCount; pageNumber++) {
+            try {
+              const imageData = await renderPDFPageToCanvas(file.file, pageNumber, file.quality)
+              const baseName = file.name.replace(/\.pdf$/i, '')
+              const imageName = pageCount > 1 
+                ? `${baseName}_page_${pageNumber.toString().padStart(2, '0')}.jpg`
+                : `${baseName}.jpg`
+              
+              allImages.push({ name: imageName, data: imageData })
+              console.log(`Successfully converted page ${pageNumber} of ${file.name}`)
+            } catch (pageError) {
+              console.error(`Failed to convert page ${pageNumber} of ${file.name}:`, pageError)
+              showToast(`Failed to convert page ${pageNumber} of ${file.name}`, 'error')
+            }
+          }
+        } catch (fileError) {
+          console.error(`Failed to process ${file.name}:`, fileError)
+          showToast(`Failed to process ${file.name}`, 'error')
+        }
+      }
+
+      if (allImages.length === 0) {
+        showToast('No images were generated. Please check your PDF files and try again.', 'error')
+        return
+      }
+
+      console.log(`Created ${allImages.length} images, creating ZIP...`)
+
+      // Create ZIP file
+      const zipBlob = await createZipBlob(allImages)
+      
+      console.log('ZIP created, size:', zipBlob.size)
+      
+      // Download ZIP file
+      const url = URL.createObjectURL(zipBlob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `pdf_to_jpg_${new Date().getTime()}.zip`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      
+      showToast(`Successfully converted ${allImages.length} pages from ${files.length} PDF(s) to JPG images!`, 'success')
+    } catch (error) {
+      console.error("Conversion failed:", error)
+      showToast('Failed to convert PDF files. Please check the console for details.', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Quality preview component
+  const QualityPreview = ({ quality }: { quality: number }) => {
+    const getQualityColor = (q: number) => {
+      if (q >= 90) return 'text-green-600 bg-green-50 border-green-200'
+      if (q >= 80) return 'text-blue-600 bg-blue-50 border-blue-200'
+      if (q >= 70) return 'text-yellow-600 bg-yellow-50 border-yellow-200'
+      return 'text-red-600 bg-red-50 border-red-200'
+    }
+
+    return (
+      <div className={`w-12 h-12 flex items-center justify-center rounded border-2 ${getQualityColor(quality)}`}>
+        <div className="text-xs font-bold">
+          {quality}%
+        </div>
+      </div>
+    )
+  }
+
+  // Quality grid component
+  const QualityGrid = ({ currentQuality, onQualitySelect }: { 
+    currentQuality: number, 
+    onQualitySelect: (quality: number) => void 
+  }) => {
+    const qualities = [60, 80, 90, 100]
+    const labels = ['Low', 'Medium', 'High', 'Max']
+    const descriptions = ['Smaller files', 'Recommended', 'High quality', 'Largest files']
+
+    return (
+      <div className="grid grid-cols-2 gap-2 p-3 bg-gray-50 rounded-lg border">
+        {qualities.map((quality, index) => (
+          <button
+            key={quality}
+            onClick={() => onQualitySelect(quality)}
+            className={`flex flex-col items-center p-3 rounded-lg border-2 transition-all hover:bg-white ${
+              currentQuality === quality 
+                ? 'border-blue-500 bg-blue-50' 
+                : 'border-gray-200 bg-white hover:border-gray-300'
+            }`}
+          >
+            <div className="w-16 h-16 flex items-center justify-center bg-gray-100 rounded border-2 border-gray-300 mb-2">
+              <div className="flex flex-col items-center">
+                <FileImage className="h-8 w-8 text-blue-600 mb-1" />
+                <span className="text-xs font-bold text-gray-600">{quality}%</span>
+              </div>
+            </div>
+            <span className="text-xs font-medium text-gray-700">{labels[index]}</span>
+            <span className="text-[10px] text-gray-500">{descriptions[index]}</span>
+          </button>
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* SEO Meta Tags */}
+      <head>
+        <title>Free PDF to JPG Converter Online - Convert PDF to Images</title>
+        <meta name="description" content="Convert PDF to high-quality JPG images online for free. Extract all pages from PDF files as separate JPG images with our easy-to-use PDF to JPG converter." />
+        <meta name="keywords" content="PDF to JPG, convert PDF to image, PDF to image converter, extract images from PDF, PDF to JPEG, free PDF converter, online PDF to JPG" />
+        <meta name="robots" content="index, follow" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <link rel="canonical" href="https://thynklabs.xyz/pdf-to-jpg" />
+        <meta property="og:title" content="Free PDF to JPG Converter Online - Convert PDF to Images" />
+        <meta property="og:description" content="Convert PDF pages to high-quality JPG images. Free online tool with adjustable image quality settings." />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content="https://thynklabs.xyz/pdf-to-jpg" />
+      </head>
+      
+      <Header />
+      {/* Toast Container */}
+      <div className="fixed top-4 right-4 z-50 space-y-2">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`flex items-center p-4 rounded-lg shadow-lg border-l-4 min-w-80 transform transition-all duration-300 ease-in-out ${
+              toast.type === 'success'
+                ? 'bg-white border-l-green-500 text-green-800'
+                : 'bg-white border-l-red-500 text-red-800'
+            }`}
+            style={{
+              animation: 'slideIn 0.3s ease-out'
+            }}
+          >
+            <div className="flex-shrink-0 mr-3">
+              {toast.type === 'success' ? (
+                <CheckCircle className="h-5 w-5 text-green-500" />
+              ) : (
+                <AlertCircle className="h-5 w-5 text-red-500" />
+              )}
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium">{toast.message}</p>
+            </div>
+            <button
+              onClick={() => removeToast(toast.id)}
+              className="flex-shrink-0 ml-4 text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="text-center mb-8">
+          <div className="bg-blue-100 p-4 rounded-full w-20 h-20 mx-auto mb-4 flex items-center justify-center">
+            <Image className="h-10 w-10 text-blue-600" />
+          </div>
+          <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">Convert PDF to JPG</h1>
+          <p className="text-xl text-gray-600 max-w-2xl mx-auto">
+            Convert your PDF pages to high-quality JPG images. All images will be downloaded as a ZIP file.
+          </p>
+        </div>
+
+        {files.length === 0 ? (
+          <div
+            className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${
+              dragActive ? "border-blue-400 bg-blue-50" : "border-gray-300 hover:border-blue-400 hover:bg-blue-50"
+            }`}
+            onDragEnter={handleDrag}
+            onDragLeave={handleDrag}
+            onDragOver={handleDrag}
+            onDrop={handleDrop}
+          >
+            <Upload className="mx-auto h-16 w-16 text-blue-600 mb-4" />
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">Select PDF files</h3>
+            <p className="text-gray-600 mb-6">or drop PDFs here</p>
+            <Button
+              className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 text-lg"
+              onClick={() => document.getElementById("file-upload")?.click()}
+            >
+              Select PDF files
+            </Button>
+            <input
+              type="file"
+              multiple
+              accept=".pdf"
+              className="hidden"
+              id="file-upload"
+              onChange={(e) => {
+                if (e.target.files) {
+                  addFiles(Array.from(e.target.files))
+                }
+              }}
+            />
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">PDF files to convert ({files.length})</h3>
+
+              <div className="space-y-4">
+                {files.map((file, index) => (
+                  <div key={file.id} className="bg-white border border-gray-200 rounded-lg p-4">
+                    {/* File Header */}
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center space-x-3">
+                        <div className="bg-blue-100 p-2 rounded">
+                          <Upload className="h-5 w-5 text-blue-600" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-900">{file.name}</p>
+                          <p className="text-sm text-gray-500">{formatFileSize(file.size)}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center space-x-2">
+                        <QualityPreview quality={file.quality} />
+                        <Button variant="ghost" size="sm" onClick={() => moveFile(file.id, "up")} disabled={index === 0}>
+                          <ArrowUp className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => moveFile(file.id, "down")}
+                          disabled={index === files.length - 1}
+                        >
+                          <ArrowDown className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeFile(file.id)}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Quality Control Section */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-medium text-gray-700">Image Quality:</h4>
+                        <select
+                          value={file.quality}
+                          onChange={(e) => updateFileQuality(file.id, Number(e.target.value))}
+                          className="px-3 py-1 border border-gray-300 rounded text-sm bg-white"
+                        >
+                          {getQualityOptions().map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <QualityGrid 
+                        currentQuality={file.quality}
+                        onQualitySelect={(quality) => updateFileQuality(file.id, quality)}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-col items-center mt-6 space-y-4">
+                <div className="flex justify-between w-full">
+                  <Button variant="outline" onClick={() => document.getElementById("file-upload")?.click()}>
+                    Add more files
+                  </Button>
+                  <Button
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-8 flex items-center space-x-2"
+                    onClick={convertPDFsToJPG}
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <>
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                        <span>Converting...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Download className="h-4 w-4" />
+                        <span>Convert & Download ZIP</span>
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                {loading && (
+                  <div className="flex justify-center items-center text-blue-600 text-sm">
+                    <div className="h-4 w-4 mr-2 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+                    Converting PDFs to JPG images and creating ZIP file...
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+
+      <Footer />
+
+      <style jsx>{`
+        @keyframes slideIn {
+          from {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+      `}</style>
+    </div>
+  )
+}
