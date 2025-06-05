@@ -2,8 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import { Menu, X, ChevronDown } from "lucide-react"
+import { Menu, X } from "lucide-react"
 
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -20,43 +19,53 @@ export default function Header() {
             </div>
           </Link>
 
-          {/* Desktop Navigation */}
-          <nav className="flex items-center space-x-8">
+          {/* Desktop Navigation - ONLY visible on md and larger screens */}
+          <nav className="hidden md:flex items-center space-x-8">
             <Link href="/pdf-tools" className="text-gray-700 hover:text-red-600 transition-colors">
               PDF Tools
             </Link>
             <Link href="/qr-code-and-barcode-generator" className="text-gray-700 hover:text-red-600 transition-colors">
               QR & Barcode
             </Link>
-            {/* <Link href="/donate" className="text-gray-700 hover:text-red-600 transition-colors">
-              Donate
-            </Link> */}
             <Link href="/issues" className="text-gray-700 hover:text-red-600 transition-colors">
               Report Issues
             </Link>
           </nav>
 
-          {/* Mobile menu button */}
-          <button className="md:hidden" onClick={() => setIsMenuOpen(!isMenuOpen)}>
-            {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+          {/* Mobile menu button - ONLY visible on smaller than md screens */}
+          <button 
+            className="md:hidden flex items-center justify-center w-10 h-10 rounded-full hover:bg-gray-100 transition-colors" 
+            onClick={() => setIsMenuOpen(!isMenuOpen)}
+            aria-label="Toggle menu"
+          >
+            {isMenuOpen ? <X className="h-6 w-6 text-gray-700" /> : <Menu className="h-6 w-6 text-gray-700" />}
           </button>
         </div>
 
-        {/* Mobile Navigation */}
+        {/* Mobile Navigation - ONLY shown when menu is open AND on smaller than md screens */}
         {isMenuOpen && (
-          <div className="md:hidden py-4 border-t border-gray-200">
-            <div className="flex flex-col space-y-4">
-              <Link href="/pdf-tools" className="text-gray-700 hover:text-red-600">
+          <div className="md:hidden py-2 border-t border-gray-200 animate-in fade-in slide-in-from-top duration-200">
+            <div className="flex flex-col">
+              <Link 
+                href="/pdf-tools" 
+                className="py-3 px-4 text-gray-700 hover:text-red-600 hover:bg-gray-50 rounded-md transition-colors"
+                onClick={() => setIsMenuOpen(false)}
+              >
                 PDF Tools
               </Link>
-              <Link href="/qr-code-and-barcode-generator" className="text-gray-700 hover:text-red-600 transition-colors">
+              <Link 
+                href="/qr-code-and-barcode-generator" 
+                className="py-3 px-4 text-gray-700 hover:text-red-600 hover:bg-gray-50 rounded-md transition-colors"
+                onClick={() => setIsMenuOpen(false)}
+              >
                 QR & Barcode
               </Link>
-              {/* <Link href="/donate" className="text-gray-700 hover:text-red-600">
-                Donate
-              </Link> */}
-              <Link href="/issues" className="text-gray-700 hover:text-red-600">
-                Help
+              <Link 
+                href="/issues" 
+                className="py-3 px-4 text-gray-700 hover:text-red-600 hover:bg-gray-50 rounded-md transition-colors"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                Report Issues
               </Link>
             </div>
           </div>

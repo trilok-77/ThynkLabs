@@ -24,6 +24,7 @@ const config: Config = {
           "Helvetica Neue",
           "sans-serif",
         ],
+        heading: ["var(--font-montserrat)", "sans-serif"],
       },
       colors: {
         background: "hsl(var(--background))",
