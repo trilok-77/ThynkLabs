@@ -2,9 +2,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  // swcMinify is no longer needed in Next.js 15
   images: {
-    domains: ['thynklabs.xyz'], // Updated to your domain
+    domains: ['thynklabs.xyz'],
     formats: ['image/avif', 'image/webp'],
   },
   poweredByHeader: false,
@@ -12,7 +11,5 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
-
-
 
 
