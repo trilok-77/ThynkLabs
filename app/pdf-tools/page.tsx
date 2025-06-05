@@ -1,5 +1,5 @@
 import Header from "@/components/header"
-import Hero from "@/components/hero"
+// import Hero from "@/components/hero"
 import ToolsGrid from "@/components/pdf-tools-grid"
 import Features from "@/components/features"
 import Footer from "@/components/footer"
