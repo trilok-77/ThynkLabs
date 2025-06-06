@@ -27,6 +27,9 @@ export default function Header() {
             <Link href="/qr-code-and-barcode-generator" className="text-gray-700 hover:text-red-600 transition-colors">
               QR & Barcode
             </Link>
+            <Link href="/bulk-url-status-checker" className="text-gray-700 hover:text-red-600 transition-colors">
+              Bulk URL Status Checker
+            </Link>
             <Link href="/issues" className="text-gray-700 hover:text-red-600 transition-colors">
               Report Issues
             </Link>
@@ -59,6 +62,13 @@ export default function Header() {
                 onClick={() => setIsMenuOpen(false)}
               >
                 QR & Barcode
+              </Link>
+              <Link 
+                href="/bulk-url-status-checker" 
+                className="py-3 px-4 text-gray-700 hover:text-red-600 hover:bg-gray-50 rounded-md transition-colors"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                Bulk URL Status Checker
               </Link>
               <Link 
                 href="/issues" 

@@ -18,8 +18,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: 'monthly' as const,
       priority: 0.8,
     },
-    
-    
+    {
+      url: `${baseUrl}/bulk-url-status-checker`,
+      lastModified: currentDate,
+      changeFrequency: 'monthly' as const,
+      priority: 0.9,
+    },
   ]
 
   // PDF Tools
@@ -51,3 +55,4 @@ export default function sitemap(): MetadataRoute.Sitemap {
 
   return routes
 }
+

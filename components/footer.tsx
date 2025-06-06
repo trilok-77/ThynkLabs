@@ -77,9 +77,9 @@ export default function Footer() {
                 </Link>
               </li>
               <li>
-                <Link href="/word-to-pdf" className="text-gray-300 hover:text-white transition-colors flex items-center">
-                  <FileText className="h-4 w-4 mr-2" />
-                  Word to PDF
+                <Link href="/bulk-url-status-checker" className="text-gray-300 hover:text-white transition-colors flex items-center">
+                  <QrCode className="h-4 w-4 mr-2" />
+                  Bulk URL Status Checker
                 </Link>
               </li>
             </ul>
@@ -114,7 +114,7 @@ export default function Footer() {
                 <span className="font-bold text-red-600 mr-0.5">Thynk</span>
                 <span className="font-normal text-gray-300">Labs</span>
               </div>
-              <p className="text-gray-400 ml-4">© 2024 Thynk Labs. All rights reserved.</p>
+              <p className="text-gray-400 ml-4">© 2025 Thynk Labs. All rights reserved.</p>
             </div>
           </div>
         </div>

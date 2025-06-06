@@ -6,6 +6,7 @@ import {
   Sparkles,
   Star,
   Barcode,
+  Link as LinkIcon,
 } from "lucide-react"
 
 const tools = [
@@ -29,6 +30,13 @@ const tools = [
     icon: FileText,
     color: "bg-red-500",
     href: "/pdf-tools",
+  },
+  {
+    name: "Bulk URL Status Checker",
+    description: "Check the status of multiple URLs at once. Get HTTP status codes, response times, and more.",
+    icon: LinkIcon,
+    color: "bg-green-500",
+    href: "/bulk-url-status-checker",
   },
 ]
 
